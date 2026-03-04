@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>充电数据分析工具</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+                'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            padding: 30px 0 20px;
+        }
+
+        header h1 {
+            font-size: 28px;
+            font-weight: 600;
+            background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 2px;
+        }
+
+        header p {
+            color: #888;
+            margin-top: 8px;
+            font-size: 14px;
+        }
+
+        /* 上传区域 */
+        .upload-section {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0 30px;
+        }
+
+        .upload-area {
+            width: 500px;
+            border: 2px dashed rgba(58, 123, 213, 0.4);
+            border-radius: 16px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .upload-area:hover {
+            border-color: rgba(58, 123, 213, 0.8);
+            background: rgba(58, 123, 213, 0.08);
+        }
+
+        .upload-area.dragover {
+            border-color: #00d2ff;
+            background: rgba(0, 210, 255, 0.1);
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .upload-area h3 {
+            font-size: 16px;
+            color: #ccc;
+            margin-bottom: 8px;
+        }
+
+        .upload-area p {
+            font-size: 13px;
+            color: #777;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .file-name {
+            margin-top: 10px;
+            color: #00d2ff;
+            font-size: 14px;
+        }
+
+        /* 图表区域 */
+        .chart-section {
+            display: none;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .chart-section h2 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: #00d2ff;
+            padding-left: 12px;
+            border-left: 3px solid #00d2ff;
+        }
+
+        #chargeChart {
+            width: 100%;
+            height: 520px;
+        }
+
+        /* 统计数据区域 */
+        .stats-section {
+            display: none;
+        }
+
+        .stats-section h2 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: #00d2ff;
+            padding-left: 12px;
+            border-left: 3px solid #00d2ff;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 12px;
+            padding: 20px 24px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            border-color: rgba(58, 123, 213, 0.3);
+            background: rgba(255, 255, 255, 0.06);
+            transform: translateY(-2px);
+        }
+
+        .stat-card .label {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+
+        .stat-card .value {
+            font-size: 26px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .stat-card .unit {
+            font-size: 14px;
+            font-weight: 400;
+            color: #999;
+            margin-left: 4px;
+        }
+
+        .stat-card.time .value { color: #00d2ff; }
+        .stat-card.voltage .value { color: #ffd700; }
+        .stat-card.current .value { color: #ff6b6b; }
+        .stat-card.temp .value { color: #51cf66; }
+
+        /* 预处理信息 */
+        .preprocess-info {
+            display: none;
+            background: rgba(0, 210, 255, 0.06);
+            border: 1px solid rgba(0, 210, 255, 0.15);
+            border-radius: 12px;
+            padding: 16px 24px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            color: #aaa;
+            line-height: 1.8;
+        }
+
+        .preprocess-info strong {
+            color: #00d2ff;
+        }
+
+        /* loading */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 12, 41, 0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .loading-overlay.show {
+            display: flex;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(0, 210, 255, 0.2);
+            border-top-color: #00d2ff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-overlay" id="loading">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>充电数据分析工具</h1>
+            <p>上传 CSV 充电日志，自动分析充电曲线与关键指标</p>
+        </header>
+
+        <div class="upload-section">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📁</div>
+                <h3>拖拽 CSV 文件到此处，或点击选择文件</h3>
+                <p>支持标准充电日志 CSV 格式</p>
+                <input type="file" class="file-input" id="fileInput" accept=".csv">
+                <div class="file-name" id="fileName"></div>
+            </div>
+        </div>
+
+        <div class="preprocess-info" id="preprocessInfo"></div>
+
+        <div class="chart-section" id="chartSection">
+            <h2>充电曲线</h2>
+            <div id="chargeChart"></div>
+        </div>
+
+        <div class="stats-section" id="statsSection">
+            <h2>统计数据</h2>
+            <div class="stats-grid" id="statsGrid"></div>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        'use strict';
+
+        // ====== DOM 元素 ======
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const fileNameEl = document.getElementById('fileName');
+        const loading = document.getElementById('loading');
+        const preprocessInfo = document.getElementById('preprocessInfo');
+        const chartSection = document.getElementById('chartSection');
+        const statsSection = document.getElementById('statsSection');
+        const statsGrid = document.getElementById('statsGrid');
+
+        // ====== 文件上传 ======
+        uploadArea.addEventListener('click', () => fileInput.click());
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.name.endsWith('.csv')) {
+                handleFile(file);
+            }
+        });
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) handleFile(file);
+        });
+
+        function handleFile(file) {
+            fileNameEl.textContent = '已选择: ' + file.name;
+            loading.classList.add('show');
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function (results) {
+                    loading.classList.remove('show');
+                    if (results.errors.length > 0) {
+                        alert('CSV 解析出错: ' + results.errors[0].message);
+                        return;
+                    }
+                    processData(results.data);
+                },
+                error: function (err) {
+                    loading.classList.remove('show');
+                    alert('文件读取失败: ' + err.message);
+                }
+            });
+        }
+
+        // ====== 数据处理核心 ======
+        function processData(rawData) {
+            // 1. 数据预处理：去除开头的无用数据
+            const cleaned = preprocessData(rawData);
+            if (cleaned.length === 0) {
+                alert('预处理后无有效数据');
+                return;
+            }
+
+            // 2. 计算统计数据
+            const stats = calculateStats(cleaned);
+
+            // 3. 绘制图表
+            drawChart(cleaned);
+
+            // 4. 展示统计数据
+            showStats(stats);
+        }
+
+        // ====== 数据预处理 ======
+        function preprocessData(rawData) {
+            // 找到开头的 Charging->Discharging 无用段
+            // 规则：表格最前面有少量 BatStat==Charging (RealType是SDP/CDP)，
+            // 然后变为 Discharging，这整段都要删掉。
+            // 找到第一个真正的充电起始点：
+            // 即跳过开头的 Charging(SDP/CDP) + 之后的 Discharging 段
+
+            let removeUntil = 0;
+            let foundInitialCharging = false;
+            let foundDischarging = false;
+
+            for (let i = 0; i < rawData.length; i++) {
+                const stat = (rawData[i].BatStat || '').trim();
+                const realType = (rawData[i].RealType || '').trim();
+
+                if (!foundInitialCharging && stat === 'Charging' &&
+                    (realType === 'SDP' || realType === 'CDP')) {
+                    // 开头的 Charging 段 (SDP/CDP)
+                    foundInitialCharging = true;
+                }
+
+                if (foundInitialCharging && !foundDischarging && stat === 'Discharging') {
+                    foundDischarging = true;
+                }
+
+                if (foundDischarging && stat !== 'Discharging') {
+                    // Discharging 结束，真正的充电开始
+                    removeUntil = i;
+                    break;
+                }
+            }
+
+            // 如果没找到 Discharging 段，说明数据直接从充电开始，不需要截断
+            if (!foundDischarging) {
+                removeUntil = 0;
+            }
+
+            const cleaned = rawData.slice(removeUntil);
+            const removedCount = removeUntil;
+
+            // 显示预处理信息
+            preprocessInfo.style.display = 'block';
+            preprocessInfo.innerHTML =
+                '<strong>数据预处理完成</strong><br>' +
+                '原始数据行数: <strong>' + rawData.length + '</strong> 行 | ' +
+                '删除无用数据: <strong>' + removedCount + '</strong> 行 | ' +
+                '有效数据行数: <strong>' + cleaned.length + '</strong> 行';
+
+            return cleaned;
+        }
+
+        // ====== 解析时间字符串 ======
+        function parseTime(timeStr) {
+            // 格式: "Wed Mar  4 14:24:20 CST 2026"
+            // 去掉 CST 之类的时区缩写，JS Date 可能不识别
+            if (!timeStr) return null;
+            const cleaned = timeStr.replace(/\s[A-Z]{3,4}\s/, ' ');
+            return new Date(cleaned);
+        }
+
+        // ====== 格式化时长 ======
+        function formatDuration(ms) {
+            if (ms == null || isNaN(ms)) return '--';
+            const totalSec = Math.floor(ms / 1000);
+            const h = Math.floor(totalSec / 3600);
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
+            const parts = [];
+            if (h > 0) parts.push(h + '时');
+            parts.push(m + '分');
+            parts.push(s + '秒');
+            return parts.join('');
+        }
+
+        // ====== 统计数据计算 ======
+        function calculateStats(data) {
+            const startTime = parseTime(data[0].time);
+            const startSeconds = parseInt(data[0].Seconds);
+
+            // 充电报百时长: Soc==100 的首次时间 - 起始时间
+            let soc100Time = null;
+            let soc100Seconds = null;
+            for (let i = 0; i < data.length; i++) {
+                if (parseInt(data[i].Soc) >= 100) {
+                    soc100Time = parseTime(data[i].time);
+                    soc100Seconds = parseInt(data[i].Seconds);
+                    break;
+                }
+            }
+            const soc100Duration = (soc100Seconds != null) ? (soc100Seconds - startSeconds) * 1000 : null;
+
+            // 充电报Full时长: BatStat==Full 的首次时间 - 起始时间
+            let fullTime = null;
+            let fullSeconds = null;
+            for (let i = 0; i < data.length; i++) {
+                if ((data[i].BatStat || '').trim() === 'Full') {
+                    fullTime = parseTime(data[i].time);
+                    fullSeconds = parseInt(data[i].Seconds);
+                    break;
+                }
+            }
+            const fullDuration = (fullSeconds != null) ? (fullSeconds - startSeconds) * 1000 : null;
+
+            // 截止电流: BatStat 从 Charging 变成 Full 时，Ibat 变成 0 前一行的值
+            // 需要过滤异常跳变 (与前几行差值不超过200mA)
+            let cutoffCurrent = null;
+            let cutoffIdx = null;
+            // 找到首次 Ibat==0 的位置（在 Full 状态中）
+            for (let i = 1; i < data.length; i++) {
+                const prevStat = (data[i - 1].BatStat || '').trim();
+                const currStat = (data[i].BatStat || '').trim();
+                if (prevStat === 'Charging' && currStat === 'Full') {
+                    // 从转换点开始找第一个 Ibat==0 的行
+                    let zeroIdx = i;
+                    while (zeroIdx < data.length && parseInt(data[zeroIdx].Ibat) !== 0) {
+                        zeroIdx++;
+                    }
+                    // zeroIdx 现在指向第一个 Ibat==0 的行
+                    // 截止电流 = Ibat 变成 0 前一行的值
+                    let targetIdx = zeroIdx - 1;
+                    if (targetIdx >= 0) {
+                        let ibatVal = parseInt(data[targetIdx].Ibat);
+                        // 过滤异常值：从目标行向前逐行检查
+                        // CV阶段电流变化平缓，相邻行差值不应超过200mA
+                        // 若差值过大，则说明当前行是异常跳变，用前一行替换
+                        let checkIdx = targetIdx;
+                        while (checkIdx > 0) {
+                            const prevIbat = parseInt(data[checkIdx - 1].Ibat);
+                            if (Math.abs(ibatVal - prevIbat) > 200) {
+                                checkIdx--;
+                                ibatVal = parseInt(data[checkIdx].Ibat);
+                                targetIdx = checkIdx;
+                            } else {
+                                break;
+                            }
+                        }
+                        cutoffCurrent = ibatVal;
+                        cutoffIdx = targetIdx;
+                    }
+                    break;
+                }
+            }
+
+            // 截止电压
+            const cutoffVoltage = cutoffIdx != null ? parseInt(data[cutoffIdx].vbat) : null;
+            // 截止时电池温度
+            const cutoffTemp = cutoffIdx != null ? parseInt(data[cutoffIdx].Tbat) : null;
+
+            // 最大充电电流
+            let maxCurrent = -Infinity;
+            // 最大充电电压
+            let maxVoltage = -Infinity;
+            // 最高电池温度
+            let maxBatTemp = -Infinity;
+            // 最高壳温
+            let maxShellTemp = -Infinity;
+
+            for (let i = 0; i < data.length; i++) {
+                const ibat = parseInt(data[i].Ibat);
+                const vbat = parseInt(data[i].vbat);
+                const tbat = parseInt(data[i].Tbat);
+                const rtbat = parseInt(data[i].RTbat);
+
+                if (!isNaN(ibat) && ibat > maxCurrent) maxCurrent = ibat;
+                if (!isNaN(vbat) && vbat > maxVoltage) maxVoltage = vbat;
+                if (!isNaN(tbat) && tbat > maxBatTemp) maxBatTemp = tbat;
+                if (!isNaN(rtbat) && rtbat > maxShellTemp) maxShellTemp = rtbat;
+            }
+
+            return {
+                soc100Duration,
+                fullDuration,
+                cutoffCurrent,
+                cutoffVoltage,
+                cutoffTemp,
+                maxCurrent,
+                maxVoltage: maxVoltage === -Infinity ? null : maxVoltage,
+                maxBatTemp: maxBatTemp === -Infinity ? null : maxBatTemp,
+                maxShellTemp: maxShellTemp === -Infinity ? null : maxShellTemp
+            };
+        }
+
+        // ====== 展示统计数据 ======
+        function showStats(stats) {
+            statsSection.style.display = 'block';
+
+            const items = [
+                {
+                    label: '充电报百时长 (Soc=100)',
+                    value: formatDuration(stats.soc100Duration),
+                    unit: '',
+                    cls: 'time'
+                },
+                {
+                    label: '充电报 Full 时长',
+                    value: formatDuration(stats.fullDuration),
+                    unit: '',
+                    cls: 'time'
+                },
+                {
+                    label: '截止电流',
+                    value: stats.cutoffCurrent != null ? stats.cutoffCurrent : '--',
+                    unit: 'mA',
+                    cls: 'current'
+                },
+                {
+                    label: '截止电压',
+                    value: stats.cutoffVoltage != null ? stats.cutoffVoltage : '--',
+                    unit: 'mV',
+                    cls: 'voltage'
+                },
+                {
+                    label: '截止时电池温度',
+                    value: stats.cutoffTemp != null ? (stats.cutoffTemp / 10).toFixed(1) : '--',
+                    unit: '°C',
+                    cls: 'temp'
+                },
+                {
+                    label: '最大充电电流',
+                    value: stats.maxCurrent != null ? stats.maxCurrent : '--',
+                    unit: 'mA',
+                    cls: 'current'
+                },
+                {
+                    label: '最大充电电压',
+                    value: stats.maxVoltage != null ? stats.maxVoltage : '--',
+                    unit: 'mV',
+                    cls: 'voltage'
+                },
+                {
+                    label: '最高电池温度',
+                    value: stats.maxBatTemp != null ? (stats.maxBatTemp / 10).toFixed(1) : '--',
+                    unit: '°C',
+                    cls: 'temp'
+                },
+                {
+                    label: '最高壳温',
+                    value: stats.maxShellTemp != null ? (stats.maxShellTemp / 10).toFixed(1) : '--',
+                    unit: '°C',
+                    cls: 'temp'
+                }
+            ];
+
+            statsGrid.innerHTML = items.map(function (item) {
+                return '<div class="stat-card ' + item.cls + '">' +
+                    '<div class="label">' + item.label + '</div>' +
+                    '<div class="value">' + item.value + '<span class="unit">' + item.unit + '</span></div>' +
+                    '</div>';
+            }).join('');
+        }
+
+        // ====== 绘制充电曲线 ======
+        function drawChart(data) {
+            chartSection.style.display = 'block';
+
+            const chart = echarts.init(document.getElementById('chargeChart'), 'dark');
+
+            // 横轴使用 Seconds（秒），转换为分钟显示
+            const startSeconds = parseInt(data[0].Seconds);
+
+            const timeData = [];
+            const socData = [];
+            const ibatData = [];
+            const vbatData = [];
+            const tbatData = [];
+
+            // 数据采样：当数据量太大时降采样以提高渲染性能
+            const step = data.length > 3000 ? Math.floor(data.length / 2000) : 1;
+
+            for (let i = 0; i < data.length; i += step) {
+                const row = data[i];
+                const sec = parseInt(row.Seconds) - startSeconds;
+                const minutes = sec / 60;
+
+                timeData.push(minutes.toFixed(1));
+                socData.push(parseInt(row.Soc));
+                ibatData.push(parseInt(row.Ibat));
+                vbatData.push(parseInt(row.vbat));
+                tbatData.push(parseInt(row.Tbat) / 10); // Tbat/10 归一化
+            }
+
+            const option = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(30, 30, 50, 0.9)',
+                    borderColor: 'rgba(0, 210, 255, 0.3)',
+                    textStyle: { color: '#ddd', fontSize: 13 },
+                    formatter: function (params) {
+                        let html = '<div style="font-weight:600;margin-bottom:6px;">时间: ' + params[0].axisValue + ' min</div>';
+                        params.forEach(function (p) {
+                            const marker = '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + p.color + ';margin-right:6px;"></span>';
+                            let unit = '';
+                            let val = p.value;
+                            if (p.seriesName === 'Soc') unit = '%';
+                            else if (p.seriesName === 'Ibat') unit = ' mA';
+                            else if (p.seriesName === 'Vbat') unit = ' mV';
+                            else if (p.seriesName === 'Tbat') { unit = ' °C'; }
+                            html += marker + p.seriesName + ': <strong>' + val + unit + '</strong><br/>';
+                        });
+                        return html;
+                    }
+                },
+                legend: {
+                    data: ['Ibat', 'Vbat', 'Soc', 'Tbat'],
+                    top: 10,
+                    textStyle: { color: '#ccc', fontSize: 13 },
+                    itemGap: 24
+                },
+                grid: {
+                    left: 80,
+                    right: 80,
+                    top: 56,
+                    bottom: 50
+                },
+                xAxis: {
+                    type: 'category',
+                    data: timeData,
+                    name: '时间 (min)',
+                    nameTextStyle: { color: '#999', fontSize: 12 },
+                    axisLabel: {
+                        color: '#999',
+                        fontSize: 11,
+                        interval: function (index, value) {
+                            // 每5分钟显示一个标签
+                            return parseFloat(value) % 5 < 0.2;
+                        },
+                        formatter: function (val) {
+                            return parseFloat(val).toFixed(0);
+                        }
+                    },
+                    axisLine: { lineStyle: { color: '#444' } },
+                    splitLine: { show: false }
+                },
+                yAxis: [
+                    {
+                        // 主坐标系: Ibat (mA) & Vbat (mV)
+                        type: 'value',
+                        name: 'Ibat(mA) / Vbat(mV)',
+                        nameTextStyle: { color: '#999', fontSize: 11 },
+                        axisLabel: { color: '#999', fontSize: 11 },
+                        axisLine: { lineStyle: { color: '#555' } },
+                        splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } }
+                    },
+                    {
+                        // 次坐标系: Soc (%) & Tbat (°C)
+                        type: 'value',
+                        name: 'Soc(%) / Tbat(°C)',
+                        nameTextStyle: { color: '#999', fontSize: 11 },
+                        axisLabel: { color: '#999', fontSize: 11 },
+                        axisLine: { lineStyle: { color: '#555' } },
+                        splitLine: { show: false }
+                    }
+                ],
+                series: [
+                    {
+                        name: 'Ibat',
+                        type: 'line',
+                        yAxisIndex: 0,
+                        data: ibatData,
+                        smooth: true,
+                        symbol: 'none',
+                        lineStyle: { width: 2, color: '#ff6b6b' },
+                        itemStyle: { color: '#ff6b6b' }
+                    },
+                    {
+                        name: 'Vbat',
+                        type: 'line',
+                        yAxisIndex: 0,
+                        data: vbatData,
+                        smooth: true,
+                        symbol: 'none',
+                        lineStyle: { width: 2, color: '#ffd700' },
+                        itemStyle: { color: '#ffd700' }
+                    },
+                    {
+                        name: 'Soc',
+                        type: 'line',
+                        yAxisIndex: 1,
+                        data: socData,
+                        smooth: true,
+                        symbol: 'none',
+                        lineStyle: { width: 2.5, color: '#00d2ff' },
+                        itemStyle: { color: '#00d2ff' }
+                    },
+                    {
+                        name: 'Tbat',
+                        type: 'line',
+                        yAxisIndex: 1,
+                        data: tbatData,
+                        smooth: true,
+                        symbol: 'none',
+                        lineStyle: { width: 2, color: '#51cf66' },
+                        itemStyle: { color: '#51cf66' }
+                    }
+                ],
+                dataZoom: [
+                    {
+                        type: 'inside',
+                        start: 0,
+                        end: 100
+                    },
+                    {
+                        type: 'slider',
+                        start: 0,
+                        end: 100,
+                        height: 20,
+                        bottom: 6,
+                        borderColor: 'transparent',
+                        backgroundColor: 'rgba(255,255,255,0.05)',
+                        fillerColor: 'rgba(0, 210, 255, 0.15)',
+                        handleStyle: { color: '#00d2ff' },
+                        textStyle: { color: '#888' }
+                    }
+                ]
+            };
+
+            chart.setOption(option);
+
+            // 响应窗口缩放
+            window.addEventListener('resize', function () {
+                chart.resize();
+            });
+        }
+
+    })();
+    </script>
+</body>
+</html>
