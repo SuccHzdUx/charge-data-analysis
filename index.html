@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>充电数据分析工具</title>
+    <title>充放电数据分析工具</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
     <style>
@@ -235,15 +235,15 @@
 
     <div class="container">
         <header>
-            <h1>充电数据分析工具</h1>
-            <p>上传 CSV 充电日志，自动分析充电曲线与关键指标</p>
+            <h1>充放电数据分析工具</h1>
+            <p>上传 CSV 充放电日志，自动识别充电/放电数据并分析曲线与关键指标</p>
         </header>
 
         <div class="upload-section">
             <div class="upload-area" id="uploadArea">
                 <div class="upload-icon">📁</div>
                 <h3>拖拽 CSV 文件到此处，或点击选择文件</h3>
-                <p>支持标准充电日志 CSV 格式</p>
+                <p>支持标准充放电日志 CSV 格式，自动识别充电/放电数据</p>
                 <input type="file" class="file-input" id="fileInput" accept=".csv">
                 <div class="file-name" id="fileName"></div>
             </div>
@@ -252,7 +252,7 @@
         <div class="preprocess-info" id="preprocessInfo"></div>
 
         <div class="chart-section" id="chartSection">
-            <h2>充电曲线</h2>
+            <h2 id="chartTitle">充电曲线</h2>
             <div id="chargeChart"></div>
         </div>
 
@@ -320,23 +320,45 @@
             });
         }
 
+        // ====== 判断充放电类型 ======
+        function detectDataType(rawData) {
+            let dischargingCount = 0;
+            for (let i = 0; i < rawData.length; i++) {
+                if ((rawData[i].BatStat || '').trim() === 'Discharging') {
+                    dischargingCount++;
+                }
+            }
+            // Discharging 占比 >= 60% 则为放电数据
+            return (dischargingCount / rawData.length) >= 0.6 ? 'discharge' : 'charge';
+        }
+
         // ====== 数据处理核心 ======
         function processData(rawData) {
-            // 1. 数据预处理：去除开头的无用数据
-            const cleaned = preprocessData(rawData);
-            if (cleaned.length === 0) {
-                alert('预处理后无有效数据');
-                return;
+            const dataType = detectDataType(rawData);
+
+            if (dataType === 'charge') {
+                // 充电流程：预处理 -> 统计 -> 绘图
+                const cleaned = preprocessData(rawData);
+                if (cleaned.length === 0) {
+                    alert('预处理后无有效数据');
+                    return;
+                }
+                document.getElementById('chartTitle').textContent = '充电曲线';
+                const stats = calculateStats(cleaned);
+                drawChart(cleaned);
+                showStats(stats);
+            } else {
+                // 放电流程：不需要预处理，直接归一化绘图
+                preprocessInfo.style.display = 'block';
+                preprocessInfo.innerHTML =
+                    '<strong>检测到放电数据</strong><br>' +
+                    '数据行数: <strong>' + rawData.length + '</strong> 行 | ' +
+                    '放电数据无需预处理，直接绘制曲线';
+                document.getElementById('chartTitle').textContent = '放电曲线';
+                const stats = calculateDischargeStats(rawData);
+                drawChart(rawData);
+                showDischargeStats(stats);
             }
-
-            // 2. 计算统计数据
-            const stats = calculateStats(cleaned);
-
-            // 3. 绘制图表
-            drawChart(cleaned);
-
-            // 4. 展示统计数据
-            showStats(stats);
         }
 
         // ====== 数据预处理 ======
@@ -580,6 +602,44 @@
                     value: stats.maxShellTemp != null ? (stats.maxShellTemp / 10).toFixed(1) : '--',
                     unit: '°C',
                     cls: 'temp'
+                }
+            ];
+
+            statsGrid.innerHTML = items.map(function (item) {
+                return '<div class="stat-card ' + item.cls + '">' +
+                    '<div class="label">' + item.label + '</div>' +
+                    '<div class="value">' + item.value + '<span class="unit">' + item.unit + '</span></div>' +
+                    '</div>';
+            }).join('');
+        }
+
+        // ====== 放电统计数据计算 ======
+        function calculateDischargeStats(data) {
+            // 关机电压：最后一行的 Vbat
+            const lastRow = data[data.length - 1];
+            const shutdownVoltage = lastRow ? parseInt(lastRow.vbat) : null;
+            return { shutdownVoltage };
+        }
+
+        // ====== 展示放电统计数据 ======
+        function showDischargeStats(stats) {
+            statsSection.style.display = 'block';
+
+            const items = [
+                { label: '充电报百时长 (Soc=100)', value: 'NA', unit: '', cls: 'time' },
+                { label: '充电报 Full 时长', value: 'NA', unit: '', cls: 'time' },
+                { label: '截止电流', value: 'NA', unit: '', cls: 'current' },
+                { label: '截止电压', value: 'NA', unit: '', cls: 'voltage' },
+                { label: '截止时电池温度', value: 'NA', unit: '', cls: 'temp' },
+                { label: '最大充电电流', value: 'NA', unit: '', cls: 'current' },
+                { label: '最大充电电压', value: 'NA', unit: '', cls: 'voltage' },
+                { label: '最高电池温度', value: 'NA', unit: '', cls: 'temp' },
+                { label: '最高壳温', value: 'NA', unit: '', cls: 'temp' },
+                {
+                    label: '关机电压',
+                    value: stats.shutdownVoltage != null ? stats.shutdownVoltage : '--',
+                    unit: 'mV',
+                    cls: 'voltage'
                 }
             ];
 
