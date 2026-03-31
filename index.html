@@ -243,7 +243,7 @@
             <div class="upload-area" id="uploadArea">
                 <div class="upload-icon">📁</div>
                 <h3>拖拽 CSV 文件到此处，或点击选择文件</h3>
-                <p>支持标准充放电日志 CSV 格式，自动识别充电/放电数据</p>
+                <p>支持标准充放电日志 CSV 及 ADT 抓取 CSV 格式</p>
                 <input type="file" class="file-input" id="fileInput" accept=".csv">
                 <div class="file-name" id="fileName"></div>
             </div>
@@ -265,6 +265,50 @@
     <script>
     (function () {
         'use strict';
+
+        // ====== ADT 格式检测与数据归一化 ======
+        // ADT CSV 列名 -> 内部列名映射
+        const ADT_COLUMN_MAP = {
+            'BattStatus': 'BatStat',
+            'SOC': 'Soc',
+            'Vbat': 'vbat',       // ADT 用大写 V，内部用小写 v
+            'BattTemp': 'Tbat',
+            'BoardSensorTemp': 'RTbat'
+            // Ibat, Seconds, RealType 两种格式一致，无需映射
+        };
+
+        function isAdtFormat(headers) {
+            return headers.includes('BattStatus') && headers.includes('BattTemp');
+        }
+
+        function normalizeData(rawData) {
+            if (rawData.length === 0) return rawData;
+            const headers = Object.keys(rawData[0]);
+            if (!isAdtFormat(headers)) return rawData;
+
+            return rawData.map(function (row) {
+                const newRow = {};
+                Object.keys(row).forEach(function (key) {
+                    const mappedKey = ADT_COLUMN_MAP[key] || key;
+                    newRow[mappedKey] = row[key];
+                });
+                // ADT 没有 time 列，合成一个供 parseTime 使用
+                if (!newRow.time && row.Date && row.Time) {
+                    newRow.time = row.Date + ' ' + row.Time;
+                }
+                // ADT 的 Ibat 负值表示充电电流，正值表示放电电流
+                // 内部约定正值为充电电流，需要取反
+                if (newRow.Ibat) {
+                    newRow.Ibat = String(-parseInt(newRow.Ibat));
+                }
+                // ADT 的 BoardSensorTemp 单位是 m°C（如 29753 = 29.753°C）
+                // 内部 RTbat 单位是 0.1°C（如 293 = 29.3°C），需要除以 100 转换
+                if (row.BoardSensorTemp) {
+                    newRow.RTbat = String(Math.round(parseInt(row.BoardSensorTemp) / 100));
+                }
+                return newRow;
+            });
+        }
 
         // ====== DOM 元素 ======
         const uploadArea = document.getElementById('uploadArea');
@@ -311,7 +355,7 @@
                         alert('CSV 解析出错: ' + results.errors[0].message);
                         return;
                     }
-                    processData(results.data);
+                    processData(normalizeData(results.data));
                 },
                 error: function (err) {
                     loading.classList.remove('show');
